@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RISC-V 3-Stage Pipeline — Live Simulation Visualizer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg:       #0a0e1a;
+    --bg2:      #111827;
+    --bg3:      #1a2233;
+    --border:   #1e2d45;
+    --accent:   #00d4ff;
+    --accent2:  #7c3aed;
+    --accent3:  #10b981;
+    --warn:     #f59e0b;
+    --danger:   #ef4444;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --if-clr:   #3b82f6;
+    --de-clr:   #8b5cf6;
+    --wb-clr:   #10b981;
+    --stall-clr:#f59e0b;
+    --flush-clr:#ef4444;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: var(--accent2); }
+  .header-sub {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-left: 1px solid var(--border);
+    padding-left: 18px;
+  }
+  .cycle-badge {
+    margin-left: auto;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .cycle-num { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .cycle-label { color: var(--muted); font-size: 10px; text-transform: uppercase; line-height: 1.2; }
+
+  /* ── CONTROLS ── */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 24px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--bg3);
+    color: var(--text);
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+  button.primary:hover { background: #00b8d9; }
+  button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .speed-label { color: var(--muted); font-size: 11px; }
+  input[type=range] { accent-color: var(--accent); width: 100px; }
+
+  .legend {
+    display: flex; gap: 14px; margin-left: auto; flex-wrap: wrap;
+  }
+  .leg {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: auto;
+    gap: 0;
+    height: calc(100vh - 107px);
+  }
+
+  /* ── LEFT PANEL ── */
+  .left-panel {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  /* ── INSTRUCTION MEMORY ── */
+  .panel-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 8px 12px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  #imem-container {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  #imem-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  #imem-table th {
+    position: sticky; top: 0;
+    background: var(--bg2);
+    color: var(--muted);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 5px 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  #imem-table td {
+    padding: 3px 8px;
+    border-bottom: 1px solid #0d1520;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  #imem-table tr.row-IF   td { background: rgba(59,130,246,0.15); color: var(--if-clr); }
+  #imem-table tr.row-DE   td { background: rgba(139,92,246,0.15); color: var(--de-clr); }
+  #imem-table tr.row-WB   td { background: rgba(16,185,129,0.12); color: var(--wb-clr); }
+  #imem-table tr.row-stall td { background: rgba(245,158,11,0.12); color: var(--warn); }
+  #imem-table td.addr    { color: var(--muted); }
+  #imem-table td.mnem    { color: var(--text); font-weight: 600; }
+  #imem-table td.hex-val { color: #4a9eca; }
+
+  /* Stage pip badge inside table */
+  .stage-pip {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+  }
+  .pip-IF  { background: var(--if-clr); color: #fff; }
+  .pip-DE  { background: var(--de-clr); color: #fff; }
+  .pip-WB  { background: var(--wb-clr); color: #000; }
+
+  /* ── REGISTER FILE ── */
+  #regfile-section {
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    flex-shrink: 0;
+  }
+  #regfile-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    padding: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+  .reg-cell {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    transition: background 0.3s, border-color 0.3s;
+    cursor: default;
+  }
+  .reg-cell:hover { border-color: var(--muted); }
+  .reg-cell.just-written {
+    background: rgba(16,185,129,0.18);
+    border-color: var(--wb-clr);
+    animation: flash 0.6s ease;
+  }
+  @keyframes flash {
+    0%   { background: rgba(16,185,129,0.5); }
+    100% { background: rgba(16,185,129,0.18); }
+  }
+  .reg-name { color: var(--muted); font-size: 9px; }
+  .reg-val  { color: var(--text); font-weight: 600; font-size: 10px; }
+  .reg-cell[data-idx="0"] .reg-val { color: var(--muted); }
+
+  /* ── RIGHT PANEL ── */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── PIPELINE DIAGRAM ── */
+  #pipeline-section {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+
+  .pipe-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    height: 56px;
+    margin-bottom: 6px;
+  }
+  .pipe-row:last-child { margin-bottom: 0; }
+
+  .pipe-instr-label {
+    width: 110px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    padding-right: 8px;
+  }
+  .pipe-instr-label .pc-badge {
+    font-size: 9px;
+    color: #4a9eca;
+    display: block;
+  }
+  .pipe-instr-label .mnem-badge {
+    font-size: 10px;
+    color: var(--text);
+    font-weight: 600;
+    display: block;
+  }
+
+  .pipe-cells {
+    display: flex;
+    gap: 2px;
+    flex: 1;
+  }
+  .pipe-cell {
+    flex: 1;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    border: 1px solid transparent;
+    transition: all 0.3s;
+    cursor: default;
+  }
+  .pipe-cell.IF   { background: rgba(59,130,246,0.20); border-color: var(--if-clr); color: var(--if-clr); }
+  .pipe-cell.DE   { background: rgba(139,92,246,0.20); border-color: var(--de-clr); color: var(--de-clr); }
+  .pipe-cell.WB   { background: rgba(16,185,129,0.18); border-color: var(--wb-clr); color: var(--wb-clr); }
+  .pipe-cell.NOP  { background: var(--bg3); border-color: var(--border); color: var(--muted); }
+  .pipe-cell.STALL{ background: rgba(245,158,11,0.18); border-color: var(--warn); color: var(--warn); }
+  .pipe-cell.FLUSH{ background: rgba(239,68,68,0.15); border-color: var(--danger); color: var(--danger); }
+  .pipe-cell.empty{ opacity: 0; }
+
+  .pipe-header {
+    display: flex;
+    gap: 2px;
+    flex: 1;
+    margin-left: 118px;
+    margin-bottom: 4px;
+  }
+  .pipe-hdr-cell {
+    flex: 1;
+    text-align: center;
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    font-size: 11px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); background: var(--bg3); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: transparent; }
+
+  .tab-panel { display: none; flex: 1; overflow: hidden; }
+  .tab-panel.active { display: flex; flex-direction: column; }
+
+  /* ── SIGNAL TRACE ── */
+  #trace-container {
+    flex: 1;
+    overflow: auto;
+    padding: 10px 14px;
+    background: var(--bg);
+  }
+
+  .cycle-block {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    animation: slideIn 0.2s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .cycle-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    background: var(--bg2);
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .cycle-header:hover { background: var(--bg3); }
+  .cycle-num-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.25);
+    border-radius: 4px;
+    padding: 1px 7px;
+  }
+  .cycle-summary {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    flex: 1;
+    color: var(--text);
+  }
+  .flag-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .flag-stall { background: rgba(245,158,11,0.25); color: var(--warn); border: 1px solid rgba(245,158,11,0.4); }
+  .flag-flush { background: rgba(239,68,68,0.20); color: var(--danger); border: 1px solid rgba(239,68,68,0.35); }
+  .flag-mem-w { background: rgba(139,92,246,0.25); color: #a78bfa; border: 1px solid rgba(139,92,246,0.4); }
+  .flag-mem-r { background: rgba(16,185,129,0.20); color: var(--wb-clr); border: 1px solid rgba(16,185,129,0.35); }
+  .flag-wb    { background: rgba(0,212,255,0.15); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
+  .chevron { color: var(--muted); transition: transform 0.2s; font-size: 10px; }
+  .chevron.open { transform: rotate(90deg); }
+
+  .cycle-body { display: none; }
+  .cycle-body.open { display: block; }
+
+  .signal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+  }
+  .sig-section {
+    background: var(--bg);
+    padding: 8px 12px;
+  }
+  .sig-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .stage-tag {
+    font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+  }
+  .tag-if  { background: var(--if-clr); color: #fff; }
+  .tag-de  { background: var(--de-clr); color: #fff; }
+  .tag-wb  { background: var(--wb-clr); color: #000; }
+
+  .sig-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+    border-bottom: 1px solid #0d1520;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+  .sig-row:last-child { border-bottom: none; }
+  .sig-key { color: var(--muted); flex-shrink: 0; }
+  .sig-val { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
+  .sig-val.hex    { color: #4a9eca; }
+  .sig-val.green  { color: var(--wb-clr); }
+  .sig-val.purple { color: #a78bfa; }
+  .sig-val.warn   { color: var(--warn); }
+  .sig-val.danger { color: var(--danger); }
+  .sig-val.cyan   { color: var(--accent); }
+
+  /* ── DATA MEMORY TAB ── */
+  #dmem-view {
+    flex: 1;
+    overflow: auto;
+    padding: 10px 14px;
+    background: var(--bg);
+  }
+  .dmem-header {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  #dmem-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  #dmem-table th {
+    background: var(--bg2);
+    color: var(--muted);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 5px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+  }
+  #dmem-table td {
+    padding: 4px 10px;
+    border-bottom: 1px solid #0d1520;
+    color: var(--muted);
+  }
+  #dmem-table tr.mem-active td { color: var(--text); background: rgba(139,92,246,0.10); }
+  #dmem-table tr.mem-written td { color: var(--wb-clr); }
+  td.mem-addr-cell { color: #4a9eca; }
+  td.mem-val-cell  { color: var(--text); font-weight: 600; }
+  td.mem-note-cell { color: var(--muted); font-size: 10px; }
+  .mem-delta {
+    display: inline-block;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    background: rgba(16,185,129,0.2);
+    color: var(--wb-clr);
+  }
+
+  /* ── PASS/FAIL SUMMARY ── */
+  #summary-view {
+    flex: 1;
+    overflow: auto;
+    padding: 14px;
+    background: var(--bg);
+  }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .stat-val { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; }
+  .stat-pass { color: var(--wb-clr); }
+  .stat-fail { color: var(--danger); }
+  .stat-total { color: var(--accent); }
+  .stat-alu { color: var(--if-clr); }
+  .stat-mem { color: var(--de-clr); }
+
+  #check-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  #check-table th {
+    background: var(--bg2);
+    color: var(--muted);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 5px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+  }
+  #check-table td {
+    padding: 4px 10px;
+    border-bottom: 1px solid #0d1520;
+    font-size: 11px;
+  }
+  .pass-row td { color: var(--wb-clr); }
+  .fail-row td { color: var(--danger); }
+  .pass-row td:first-child::before { content: "✓ "; }
+  .fail-row td:first-child::before { content: "✗ "; }
+
+  /* ── SCROLLBARS ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  .tooltip {
+    position: relative;
+  }
+  .tooltip:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: 100%; left: 50%;
+    transform: translateX(-50%);
+    background: #0f172a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    z-index: 200;
+    pointer-events: none;
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">RV32I<span>·3S</span></div>
+  <div class="header-sub">3-Stage Pipeline Simulation Visualizer &nbsp;|&nbsp; SystemVerilog RTL</div>
+  <div class="cycle-badge">
+    <div>
+      <div class="cycle-num" id="hdr-cycle">0</div>
+      <div class="cycle-label">Clock<br>Cycle</div>
+    </div>
+    <div style="border-left:1px solid var(--border); padding-left:10px;">
+      <div style="font-size:11px; color:var(--accent3); font-weight:600;" id="hdr-pc">PC: 0x00000000</div>
+      <div style="font-size:10px; color:var(--muted);" id="hdr-state">RESET</div>
+    </div>
+  </div>
+</header>
+
+<div class="controls">
+  <button class="primary" id="btn-run">▶ Run All</button>
+  <button id="btn-step">Step ›</button>
+  <button id="btn-back" disabled>‹ Back</button>
+  <button id="btn-reset">↺ Reset</button>
+  <span class="speed-label">Speed:</span>
+  <input type="range" id="speed-slider" min="50" max="800" value="200">
+  <span id="speed-val" style="font-family:JetBrains Mono;font-size:11px;color:var(--muted);">200ms</span>
+  <div class="legend">
+    <div class="leg"><div class="leg-dot" style="background:var(--if-clr)"></div>IF Stage</div>
+    <div class="leg"><div class="leg-dot" style="background:var(--de-clr)"></div>DE/EX Stage</div>
+    <div class="leg"><div class="leg-dot" style="background:var(--wb-clr)"></div>MEM/WB Stage</div>
+    <div class="leg"><div class="leg-dot" style="background:var(--warn)"></div>Stall</div>
+    <div class="leg"><div class="leg-dot" style="background:var(--danger)"></div>Flush</div>
+  </div>
+</div>
+
+<div class="main">
+  <!-- LEFT PANEL -->
+  <div class="left-panel">
+    <div class="panel-title"><div class="dot" style="background:var(--if-clr)"></div>Instruction Memory (IMEM)</div>
+    <div id="imem-container">
+      <table id="imem-table">
+        <thead>
+          <tr><th>Addr</th><th>Hex</th><th>Mnemonic</th><th>Stage</th></tr>
+        </thead>
+        <tbody id="imem-body"></tbody>
+      </table>
+    </div>
+    <div id="regfile-section">
+      <div class="panel-title"><div class="dot" style="background:var(--wb-clr)"></div>Register File (x0–x31)</div>
+      <div id="regfile-grid"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+    <!-- PIPELINE DIAGRAM -->
+    <div id="pipeline-section">
+      <div class="panel-title" style="padding:0 0 6px 0; background:transparent; border:none;">
+        <div class="dot" style="background:var(--accent2)"></div>Pipeline Timing Diagram (last 8 cycles)
+      </div>
+      <div class="pipe-header" id="pipe-header"></div>
+      <div id="pipe-rows"></div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="trace">Cycle Trace</button>
+      <button class="tab-btn" data-tab="dmem">Data Memory</button>
+      <button class="tab-btn" data-tab="summary">Pass/Fail Summary</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-trace">
+      <div id="trace-container"></div>
+    </div>
+    <div class="tab-panel" id="tab-dmem">
+      <div id="dmem-view">
+        <div class="dmem-header">Data memory — showing touched locations (word-aligned view, 4 KB space)</div>
+        <table id="dmem-table">
+          <thead><tr><th>Address</th><th>+0</th><th>+1</th><th>+2</th><th>+3</th><th>Word (LE)</th><th>Last Operation</th></tr></thead>
+          <tbody id="dmem-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="tab-panel" id="tab-summary">
+      <div id="summary-view">
+        <div class="summary-grid" id="summary-cards"></div>
+        <table id="check-table">
+          <thead><tr><th>Register</th><th>Expected</th><th>Actual</th><th>Category</th><th>Description</th></tr></thead>
+          <tbody id="check-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  RISC-V 3-Stage Pipeline — Full Behavioural Simulation Model
+// ═══════════════════════════════════════════════════════════════
+
+// ── ALU opcodes matching alu.sv ──────────────────────────────
+const ALU_ADD=0,ALU_SUB=1,ALU_AND=2,ALU_OR=3,ALU_XOR=4,
+      ALU_SLL=5,ALU_SRL=6,ALU_SRA=7,ALU_SLT=8;
+
+function alu32(a, b, op) {
+  a = a|0; b = b|0;
+  switch(op) {
+    case ALU_ADD: return (a + b) | 0;
+    case ALU_SUB: return (a - b) | 0;
+    case ALU_AND: return a & b;
+    case ALU_OR:  return a | b;
+    case ALU_XOR: return a ^ b;
+    case ALU_SLL: return a << (b & 31);
+    case ALU_SRL: return (a >>> (b & 31)) | 0;
+    case ALU_SRA: return (a >> (b & 31)) | 0;
+    case ALU_SLT: return (a < b) ? 1 : 0;
+    default: return 0;
+  }
+}
+
+// ── Hex program (from program.hex) ───────────────────────────
+const PROGRAM_HEX = [
+  0x00500093,0x00000013,0x00a00113,0x00000013,
+  0x06308013,0x00000013,0x002081b3,0x00000013,
+  0x40110233,0x00000013,0x0020f2b3,0x00000013,
+  0x0020e333,0x00000013,0x0020c3b3,0x00000013,
+  0x0020a433,0x00000013,0x001124b3,0x00000013,
+  0x00209533,0x00000013,0xff800593,0x00000013,
+  0x00200613,0x00000013,0x00c5d6b3,0x00000013,
+  0x40c5d733,0x00000013,0xffd08793,0x00000013,
+  0x00617813,0x00000013,0x00516893,0x00000013,
+  0x00f14913,0x00000013,0x0640a993,0x00000013,
+  0xf9c0aa13,0x00000013,0x00309a93,0x00000013,
+  0x0045db13,0x00000013,0x4015db93,0x00000013,
+  0x12345c37,0x00000013,0x00001c97,0x00000013,
+  0x10000d13,0x00000013,0xfff00d93,0x00000013,
+  0x01bd2023,0x00000013,0x000d2e03,0x00000013,
+  0x000d4e83,0x00000013,0x000d0f03,0x00000013,
+  0x000d5f83,0x00000013,0x07f00293,0x00000013,
+  0x005d0223,0x00000013,0x004d0303,0x00000013,
+  0x08000393,0x00000013,0x007d02a3,0x00000013,
+  0x005d0403,0x00000013,0x005d4483,0x00000013,
+  0xfff00513,0x00000013,0x00ad1423,0x00000013,
+  0x008d1583,0x00000013,0x008d5603,0x00000013,
+  0x12c00693,0x00000013,0xfd46a703,0x00000013,
+  0x000d2783,0x00f78833,0x00000013,0x00700893,
+  0x00000013,0x00700913,0x00000013,0x01288463,
+  0xdea00993,0x00b00a13,0x00000013,0x00300a93,
+  0x00000013,0x00900b13,0x00000013,0x076a8863,
+  0xaaa00b93,0x00000013,0x00100c13,0x00000013,
+  0x00200c93,0x00000013,0x019c1463,0xbad00d13,
+  0x01600d93,0x00000013,0x00400e13,0x00000013,
+  0x03ce1e63,0xccc00e93,0x00000013,0x00800f6f,
+  0xfee00f93,0x07b00093,0x00000013,0x00000113,
+  0x00000013,0x00000117,0x00000013,0x010101e7,
+  0xfab00213,0x04d00293,0x00000013,0x0000006f
+];
+
+// ── Sign-extend helpers ───────────────────────────────────────
+function sext(val, bits) {
+  const shift = 32 - bits;
+  return (val << shift) >> shift;
+}
+function u32(v) { return v >>> 0; }
+function hex8(v) { return '0x' + u32(v).toString(16).padStart(8,'0').toUpperCase(); }
+function hex2(v) { return u32(v).toString(16).padStart(8,'0').toUpperCase(); }
+
+// ── Instruction decoder ───────────────────────────────────────
+function decode(instr) {
+  const opcode = instr & 0x7f;
+  const rd     = (instr >> 7)  & 0x1f;
+  const funct3 = (instr >> 12) & 0x07;
+  const rs1    = (instr >> 15) & 0x1f;
+  const rs2    = (instr >> 20) & 0x1f;
+  const funct7 = (instr >> 25) & 0x7f;
+
+  // immediates
+  const imm_i  = sext((instr >> 20), 12);
+  const imm_s  = sext(((instr >> 25) << 5) | ((instr >> 7) & 0x1f), 12);
+  const imm_b  = sext(
+    (((instr >> 31) & 1) << 12) | (((instr >> 7) & 1) << 11) |
+    (((instr >> 25) & 0x3f) << 5) | (((instr >> 8) & 0xf) << 1), 13);
+  const imm_u  = instr & 0xfffff000;
+  const imm_j  = sext(
+    (((instr >> 31) & 1) << 20) | (((instr >> 12) & 0xff) << 12) |
+    (((instr >> 20) & 1) << 11) | (((instr >> 21) & 0x3ff) << 1), 21);
+
+  let mnem = '???', imm = 0, is_load=false, is_store=false, is_branch=false,
+      is_jump=false, reg_write=false, mem_read=false, mem_write=false,
+      result_src=false, alu_op=0, alu_src=false;
+
+  switch(opcode) {
+    case 0x33: { // R-type
+      const sub = funct7===0x20;
+      const mnems33 = {0:'ADD',1:'SLL',2:'SLT',4:'XOR',5:sub?'SRA':'SRL',6:'OR',7:'AND'};
+      if(funct3===0) mnem = sub?'SUB':'ADD';
+      else mnem = mnems33[funct3]||'R??';
+      reg_write=true; alu_src=false;
+      if(funct3===0) alu_op=sub?ALU_SUB:ALU_ADD;
+      else if(funct3===1) alu_op=ALU_SLL;
+      else if(funct3===2||funct3===3) alu_op=ALU_SLT;
+      else if(funct3===4) alu_op=ALU_XOR;
+      else if(funct3===5) alu_op=sub?ALU_SRA:ALU_SRL;
+      else if(funct3===6) alu_op=ALU_OR;
+      else if(funct3===7) alu_op=ALU_AND;
+      break; }
+    case 0x13: { // I-type ALU
+      const mnems13={0:'ADDI',1:'SLLI',2:'SLTI',4:'XORI',5:(funct7===0x20)?'SRAI':'SRLI',6:'ORI',7:'ANDI'};
+      mnem=mnems13[funct3]||'I??'; imm=imm_i; reg_write=true; alu_src=true;
+      if(funct3===0) alu_op=ALU_ADD;
+      else if(funct3===1) alu_op=ALU_SLL;
+      else if(funct3===2||funct3===3) alu_op=ALU_SLT;
+      else if(funct3===4) alu_op=ALU_XOR;
+      else if(funct3===5) alu_op=(funct7===0x20)?ALU_SRA:ALU_SRL;
+      else if(funct3===6) alu_op=ALU_OR;
+      else if(funct3===7) alu_op=ALU_AND;
+      break; }
+    case 0x03: { // Load
+      const mnl={0:'LB',1:'LH',2:'LW',4:'LBU',5:'LHU'};
+      mnem=mnl[funct3]||'L??'; imm=imm_i; is_load=true; reg_write=true;
+      mem_read=true; result_src=true; alu_op=ALU_ADD; alu_src=true;
+      break; }
+    case 0x23: { // Store
+      const mns={0:'SB',1:'SH',2:'SW'};
+      mnem=mns[funct3]||'S??'; imm=imm_s; is_store=true;
+      mem_write=true; alu_op=ALU_ADD; alu_src=true;
+      break; }
+    case 0x63: { // Branch
+      const mnb={0:'BEQ',1:'BNE',4:'BLT',5:'BGE',6:'BLTU',7:'BGEU'};
+      mnem=mnb[funct3]||'B??'; imm=imm_b; is_branch=true; alu_op=ALU_SUB;
+      break; }
+    case 0x6f: mnem='JAL'; imm=imm_j; is_jump=true; reg_write=true; break;
+    case 0x67: mnem='JALR'; imm=imm_i; is_jump=true; reg_write=true; alu_op=ALU_ADD; alu_src=true; break;
+    case 0x37: mnem='LUI'; imm=imm_u; reg_write=true; alu_src=true; break;
+    case 0x17: mnem='AUIPC'; imm=imm_u; reg_write=true; alu_src=true; alu_op=ALU_ADD; break;
+    case 0x00: mnem='NOP'; break;
+    default:
+      if(instr===0x00000013) mnem='NOP';
+      break;
+  }
+  return {opcode,rd,funct3,rs1,rs2,funct7,imm,mnem,
+    is_load,is_store,is_branch,is_jump,
+    reg_write,mem_read,mem_write,result_src,alu_op,alu_src};
+}
+
+function mnemStr(instr, d) {
+  if(instr===0x00000013) return 'NOP';
+  const R = n => `x${n}`;
+  const h = v => hex8(v);
+  switch(d.opcode) {
+    case 0x33: return `${d.mnem} x${d.rd}, x${d.rs1}, x${d.rs2}`;
+    case 0x13: {
+      if(instr===0x00000013) return 'NOP';
+      if(d.funct3===0) return `${d.mnem} x${d.rd}, x${d.rs1}, ${d.imm}`;
+      return `${d.mnem} x${d.rd}, x${d.rs1}, ${d.imm}`;
+    }
+    case 0x03: return `${d.mnem} x${d.rd}, ${d.imm}(x${d.rs1})`;
+    case 0x23: return `${d.mnem} x${d.rs2}, ${d.imm}(x${d.rs1})`;
+    case 0x63: return `${d.mnem} x${d.rs1}, x${d.rs2}, ${d.imm}`;
+    case 0x6f: return `JAL x${d.rd}, ${d.imm}`;
+    case 0x67: return `JALR x${d.rd}, x${d.rs1}, ${d.imm}`;
+    case 0x37: return `LUI x${d.rd}, ${hex8(d.imm)}`;
+    case 0x17: return `AUIPC x${d.rd}, ${hex8(d.imm)}`;
+    default: return d.mnem||'???';
+  }
+}
+
+// ── ALU control (matching alu_control.sv) ────────────────────
+function aluControl(alu_op_cat, funct3, funct7, is_rtype) {
+  switch(alu_op_cat) {
+    case 0: return ALU_ADD;
+    case 1: return ALU_SUB;
+    case 3: return ALU_ADD;
+    case 2: {
+      switch(funct3) {
+        case 0: return (is_rtype && (funct7&0x20)) ? ALU_SUB : ALU_ADD;
+        case 1: return ALU_SLL;
+        case 2: case 3: return ALU_SLT;
+        case 4: return ALU_XOR;
+        case 5: return (funct7&0x20) ? ALU_SRA : ALU_SRL;
+        case 6: return ALU_OR;
+        case 7: return ALU_AND;
+        default: return ALU_ADD;
+      }
+    }
+    default: return ALU_ADD;
+  }
+}
+
+// ── Data memory (4 KB, byte-addressable) ─────────────────────
+let dmem = new Uint8Array(4096);
+let dmemWritten = new Set(); // addresses written to
+
+function dmemRead(addr, funct3) {
+  addr = u32(addr);
+  switch(funct3) {
+    case 0: return sext(dmem[addr], 8);
+    case 1: return sext(dmem[addr] | (dmem[addr+1]<<8), 16);
+    case 2: return dmem[addr]|(dmem[addr+1]<<8)|(dmem[addr+2]<<16)|(dmem[addr+3]<<24);
+    case 4: return dmem[addr];
+    case 5: return (dmem[addr]|(dmem[addr+1]<<8))&0xffff;
+    default: return 0;
+  }
+}
+function dmemWrite(addr, data, funct3) {
+  addr = u32(addr); data = u32(data);
+  switch(funct3) {
+    case 0: dmem[addr]=data&0xff; dmemWritten.add(addr&~3); break;
+    case 1: dmem[addr]=data&0xff; dmem[addr+1]=(data>>8)&0xff; dmemWritten.add(addr&~3); break;
+    case 2:
+      dmem[addr]=data&0xff; dmem[addr+1]=(data>>8)&0xff;
+      dmem[addr+2]=(data>>16)&0xff; dmem[addr+3]=(data>>24)&0xff;
+      dmemWritten.add(addr&~3); break;
+  }
+}
+
+// ── Register file ─────────────────────────────────────────────
+let regs = new Int32Array(32);
+function regRead(addr) { return addr===0 ? 0 : regs[addr]; }
+function regWrite(addr, val) { if(addr!==0) regs[addr]=val|0; }
+
+// ── Pipeline state ────────────────────────────────────────────
+let PC = 0;
+let cycleCount = 0;
+let simulationDone = false;
+let stepHistory = [];  // for back-stepping
+
+// IF/DE register
+let ifde = { instr: 0x00000013, pc: 0, pc_next: 4, valid: false };
+// DE/MEM register
+let demem = {
+  alu_result:0, rs2_data:0, rd:0, pc_next:0, imm_ext:0,
+  funct3:0, reg_write:false, mem_read:false, mem_write:false,
+  result_src:false, jump:false, opcode:0, instr:0x00000013, pc:0,
+  valid: false
+};
+
+// Pipeline history for diagram (instr, stage label, cycle entered)
+let pipelineRows = []; // array of {pc, mnem, cycles:[]}  max 8 entries
+
+let stalled_for_pc = -1;
+let cycleLog = [];  // detailed log of each cycle
+let dmemLog = [];   // log of memory operations
+
+// Register flash state
+let regFlash = new Array(32).fill(false);
+let regPrevWrite = -1;
+
+// ── Simulation step ───────────────────────────────────────────
+function simulationStep() {
+  if(simulationDone) return;
+
+  const snap = captureState();
+  stepHistory.push(snap);
+
+  cycleCount++;
+  const log = { cycle: cycleCount, stages: {}, flags: {} };
+
+  // ── Stage 3: MEM/WB ──────────────────────────────────────
+  let wb_write_data = 0, wb_rd = demem.rd, wb_reg_write = demem.reg_write;
+  let dmem_read_data = 0;
+  let memOp = null;
+
+  if(demem.valid) {
+    if(demem.mem_read) {
+      dmem_read_data = dmemRead(u32(demem.alu_result), demem.funct3);
+    }
+    if(demem.mem_write) {
+      dmemWrite(u32(demem.alu_result), demem.rs2_data, demem.funct3);
+      const sizeStr = ['BYTE','HALF','WORD'][demem.funct3]||'?';
+      memOp = {type:'STORE', addr:u32(demem.alu_result), data:u32(demem.rs2_data), funct3:demem.funct3, size:sizeStr, cycle:cycleCount};
+      dmemLog.push(memOp);
+    }
+
+    // wb_mux
+    if(demem.jump) {
+      wb_write_data = demem.pc_next;
+    } else if(demem.opcode === 0x37) { // LUI
+      wb_write_data = demem.imm_ext;
+    } else if(demem.result_src) {
+      wb_write_data = dmem_read_data;
+      if(demem.mem_read) {
+        memOp = {type:'LOAD', addr:u32(demem.alu_result), data:u32(dmem_read_data), funct3:demem.funct3, cycle:cycleCount};
+        dmemLog.push(memOp);
+      }
+    } else {
+      wb_write_data = demem.alu_result;
+    }
+
+    if(wb_reg_write && wb_rd !== 0) {
+      regFlash = new Array(32).fill(false);
+      regFlash[wb_rd] = true;
+      regPrevWrite = wb_rd;
+      regWrite(wb_rd, wb_write_data);
+    }
+  }
+
+  // log WB
+  log.stages.WB = {
+    rd: demem.rd, reg_write: demem.reg_write,
+    write_data: u32(wb_write_data),
+    mem_read: demem.mem_read, mem_write: demem.mem_write,
+    alu_result: u32(demem.alu_result),
+    read_data: u32(dmem_read_data),
+    instr: demem.instr, pc: demem.pc,
+    mnem: mnemStr(demem.instr, decode(demem.instr))
+  };
+
+  // ── Stage 2: DE/EX ───────────────────────────────────────
+  const id_instr = ifde.instr;
+  const id_pc    = ifde.pc;
+  const id_pcn   = ifde.pc_next;
+  const d = decode(id_instr);
+
+  // read registers (write-first bypass from WB)
+  let rs1_data = regRead(d.rs1);
+  let rs2_data = regRead(d.rs2);
+  if(wb_reg_write && wb_rd!==0) {
+    if(d.rs1===wb_rd) rs1_data = wb_write_data|0;
+    if(d.rs2===wb_rd) rs2_data = wb_write_data|0;
+  }
+
+  // ALU operands
+  let alu_a = rs1_data;
+  if(d.opcode===0x37) alu_a = 0;
+  else if(d.opcode===0x17) alu_a = id_pc;
+  const alu_b = d.alu_src ? d.imm : rs2_data;
+
+  // alu_op_cat
+  let alu_op_cat = 2;
+  if(d.opcode===0x03||d.opcode===0x23||d.opcode===0x67) alu_op_cat=0;
+  else if(d.opcode===0x63) alu_op_cat=1;
+  else if(d.opcode===0x37) alu_op_cat=3;
+  else if(d.opcode===0x17) alu_op_cat=0;
+  const alu_op_final = aluControl(alu_op_cat, d.funct3, d.funct7, d.opcode===0x33);
+  const alu_result = alu32(alu_a, alu_b, alu_op_final);
+  const alu_zero = (alu_result === 0);
+
+  // branch unit
+  let branch_target, pc_src_branch=false;
+  if(d.opcode===0x67) { // JALR
+    branch_target = (alu_result) & ~1;
+  } else {
+    branch_target = (id_pc + d.imm) | 0;
+  }
+  if(d.is_jump) pc_src_branch = true;
+  else if(d.is_branch) {
+    const taken = (d.funct3===0 && alu_zero) || (d.funct3===1 && !alu_zero);
+    if(taken) pc_src_branch = true;
+  }
+
+  // stall unit (load-use hazard)
+  const next_rs1 = (PROGRAM_HEX[PC>>2]>>15)&0x1f;
+  const next_rs2 = (PROGRAM_HEX[PC>>2]>>20)&0x1f;
+  const hazard_raw = d.mem_read && d.rd!==0 &&
+    ((d.rd===next_rs1)||(d.rd===next_rs2));
+  const stall = hazard_raw && (id_pc !== stalled_for_pc);
+  if(stall) stalled_for_pc = id_pc;
+  else if(!hazard_raw) stalled_for_pc = -1;
+
+  // PC control
+  let next_pc;
+  if(stall) {
+    next_pc = PC; // freeze
+  } else if(pc_src_branch) {
+    next_pc = u32(branch_target);
+  } else {
+    next_pc = PC + 4;
+  }
+
+  const branch_flush = pc_src_branch;
+  log.stages.DE = {
+    instr: id_instr, pc: id_pc, mnem: mnemStr(id_instr, d),
+    opcode: d.opcode, rs1: d.rs1, rs2: d.rs2, rd: d.rd,
+    funct3: d.funct3, funct7: d.funct7, imm: u32(d.imm),
+    rs1_data: u32(rs1_data), rs2_data: u32(rs2_data),
+    alu_a: u32(alu_a), alu_b: u32(alu_b),
+    alu_op: alu_op_final, alu_result: u32(alu_result), alu_zero,
+    branch_target: u32(branch_target), pc_src: pc_src_branch,
+    reg_write: d.reg_write, mem_read: d.mem_read,
+    mem_write: d.mem_write, result_src: d.result_src,
+    branch: d.is_branch, jump: d.is_jump
+  };
+
+  log.flags.stall = stall;
+  log.flags.flush = branch_flush;
+  log.flags.mem_w = demem.mem_write;
+  log.flags.mem_r = demem.mem_read;
+  log.flags.wb    = (wb_reg_write && wb_rd!==0);
+
+  // ── Stage 1: IF ──────────────────────────────────────────
+  const if_pc = PC;
+  const fetch_word = PROGRAM_HEX[PC>>2] ?? 0x00000013;
+  const if_pc_next = stall ? PC : (pc_src_branch ? u32(branch_target) : PC+4);
+
+  log.stages.IF = {
+    pc: if_pc, pc_next: u32(if_pc_next),
+    instr: fetch_word,
+    mnem: mnemStr(fetch_word, decode(fetch_word))
+  };
+
+  cycleLog.push(log);
+
+  // ── Update pipeline registers ─────────────────────────────
+  // DE/MEM register (always let load proceed, never flush it)
+  if(ifde.valid) {
+    demem = {
+      alu_result: alu_result|0,
+      rs2_data: rs2_data|0,
+      rd: d.rd,
+      pc_next: id_pcn,
+      imm_ext: d.imm,
+      funct3: d.funct3,
+      reg_write: stall ? false : d.reg_write,
+      mem_read:  stall ? false : d.mem_read,
+      mem_write: stall ? false : d.mem_write,
+      result_src: d.result_src,
+      jump: d.is_jump,
+      opcode: d.opcode,
+      instr: id_instr,
+      pc: id_pc,
+      valid: true
+    };
+  } else {
+    demem = {...demem, valid:true,
+      reg_write:false, mem_read:false, mem_write:false,
+      instr:0x00000013, pc:0, rd:0
+    };
+  }
+
+  // IF/DE register
+  if(stall) {
+    // hold IF/DE
+  } else if(branch_flush) {
+    ifde = {instr:0x00000013, pc:if_pc, pc_next:if_pc_next, valid:true};
+  } else {
+    ifde = {instr:fetch_word, pc:if_pc, pc_next:if_pc_next, valid:true};
+  }
+
+  // Advance PC
+  PC = stall ? PC : if_pc_next;
+
+  // Detect halt loop
+  if(cycleCount > 200) { simulationDone = true; return; }
+  if(cycleCount > 10 && PC === if_pc && pc_src_branch && u32(branch_target)===u32(if_pc)) {
+    simulationDone = true;
+  }
+
+  return log;
+}
+
+// ── State capture / restore for back-stepping ─────────────────
+function captureState() {
+  return {
+    PC, cycleCount, ifde: {...ifde}, demem: {...demem},
+    regs: new Int32Array(regs),
+    dmem: new Uint8Array(dmem),
+    dmemWritten: new Set(dmemWritten),
+    stalled_for_pc,
+    cycleLog: [...cycleLog.map(x=>({...x}))],
+    dmemLog: [...dmemLog]
+  };
+}
+function restoreState(s) {
+  PC = s.PC; cycleCount = s.cycleCount;
+  ifde = {...s.ifde}; demem = {...s.demem};
+  regs = new Int32Array(s.regs);
+  dmem = new Uint8Array(s.dmem);
+  dmemWritten = new Set(s.dmemWritten);
+  stalled_for_pc = s.stalled_for_pc;
+  cycleLog = s.cycleLog.map(x=>({...x}));
+  dmemLog = [...s.dmemLog];
+  simulationDone = false;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════════════
+
+// ── Build IMEM table (once) ──────────────────────────────────
+function buildImem() {
+  const tbody = document.getElementById('imem-body');
+  tbody.innerHTML = '';
+  PROGRAM_HEX.forEach((word, i) => {
+    const addr = i * 4;
+    const d = decode(word);
+    const m = mnemStr(word, d);
+    const tr = document.createElement('tr');
+    tr.id = `imem-row-${addr}`;
+    tr.innerHTML = `
+      <td class="addr">${hex8(addr)}</td>
+      <td class="hex-val">${hex2(word)}</td>
+      <td class="mnem">${m}</td>
+      <td></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Build regfile grid (once) ─────────────────────────────────
+function buildRegfile() {
+  const grid = document.getElementById('regfile-grid');
+  grid.innerHTML = '';
+  const NAMES=['zero','ra','sp','gp','tp','t0','t1','t2',
+                's0','s1','a0','a1','a2','a3','a4','a5',
+                'a6','a7','s2','s3','s4','s5','s6','s7',
+                's8','s9','s10','s11','t3','t4','t5','t6'];
+  for(let i=0;i<32;i++){
+    const cell = document.createElement('div');
+    cell.className='reg-cell';
+    cell.id=`reg-${i}`;
+    cell.dataset.idx=i;
+    cell.title=`x${i} (${NAMES[i]})`;
+    cell.innerHTML=`<span class="reg-name">x${i}</span><span class="reg-val" id="reg-val-${i}">0x00000000</span>`;
+    grid.appendChild(cell);
+  }
+}
+
+// ── Update regfile display ────────────────────────────────────
+function updateRegfile() {
+  for(let i=0;i<32;i++){
+    const el=document.getElementById(`reg-val-${i}`);
+    const cell=document.getElementById(`reg-${i}`);
+    if(el) el.textContent=hex8(i===0?0:regs[i]);
+    if(cell){
+      cell.classList.toggle('just-written', regFlash[i]);
+    }
+  }
+}
+
+// ── Update IMEM highlights ────────────────────────────────────
+function updateImem(log) {
+  // Clear all
+  document.querySelectorAll('#imem-body tr').forEach(r=>{
+    r.className=''; r.querySelector('td:last-child').innerHTML='';
+  });
+  if(!log) return;
+
+  const mark = (pc, cls, pip) => {
+    const row = document.getElementById(`imem-row-${pc}`);
+    if(row) {
+      row.className=cls;
+      row.querySelector('td:last-child').innerHTML=`<span class="stage-pip ${pip}">${pip.replace('pip-','')}</span>`;
+      row.scrollIntoView({block:'nearest'});
+    }
+  };
+  // Stage 3 (WB) — what was in DE at previous step (demem.pc)
+  if(log.stages.WB && log.stages.WB.pc !== undefined && log.stages.WB.instr!==0x00000013)
+    mark(log.stages.WB.pc, 'row-WB', 'pip-WB');
+  // Stage 2 (DE) — ifde
+  if(log.stages.DE && log.stages.DE.pc !== undefined && log.stages.DE.instr!==0x00000013)
+    mark(log.stages.DE.pc, 'row-DE', 'pip-DE');
+  // Stage 1 (IF)
+  if(log.stages.IF)
+    mark(log.stages.IF.pc, 'row-IF', 'pip-IF');
+}
+
+// ── Update pipeline timing diagram ───────────────────────────
+const PIPE_WINDOW = 8;
+let pipeMap = {}; // pc -> {mnem, cells: {cycleN: 'IF'|'DE'|'WB'|'NOP'|'STALL'|'FLUSH'}}
+
+function updatePipelineDiagram(log, cycleN) {
+  if(!log) return;
+
+  // Register stages for this cycle
+  const {IF, DE, WB} = log.stages;
+  const {stall, flush} = log.flags;
+
+  if(IF && IF.instr!==undefined) {
+    const key = IF.pc;
+    if(!pipeMap[key]) pipeMap[key] = {mnem: IF.mnem, cells:{}};
+    pipeMap[key].cells[cycleN] = stall ? 'STALL' : (flush&&WB&&WB.pc===IF.pc?'FLUSH':'IF');
+  }
+  if(DE && DE.instr!==undefined && DE.instr!==0x00000013) {
+    const key = DE.pc;
+    if(!pipeMap[key]) pipeMap[key] = {mnem: DE.mnem, cells:{}};
+    pipeMap[key].cells[cycleN] = flush&&!stall ? 'FLUSH' : 'DE';
+  }
+  if(WB && WB.instr!==undefined && WB.instr!==0x00000013 && WB.pc!==undefined) {
+    const key = WB.pc;
+    if(!pipeMap[key]) pipeMap[key] = {mnem: WB.mnem, cells:{}};
+    pipeMap[key].cells[cycleN] = 'WB';
+  }
+
+  // Get last 8 cycles
+  const minC = Math.max(1, cycleN - PIPE_WINDOW + 1);
+  const cycles = Array.from({length: cycleN - minC + 1}, (_,i)=>minC+i);
+
+  // Get rows that have activity in this window
+  const activeKeys = Object.keys(pipeMap)
+    .filter(k => cycles.some(c => pipeMap[k].cells[c]))
+    .sort((a,b) => parseInt(a)-parseInt(b))
+    .slice(-8);
+
+  // Render header
+  const hdr = document.getElementById('pipe-header');
+  hdr.innerHTML = cycles.map(c=>`<div class="pipe-hdr-cell">C${c}</div>`).join('');
+
+  // Render rows
+  const cont = document.getElementById('pipe-rows');
+  cont.innerHTML = '';
+  activeKeys.forEach(key => {
+    const info = pipeMap[key];
+    const row = document.createElement('div');
+    row.className='pipe-row';
+    const lbl = document.createElement('div');
+    lbl.className='pipe-instr-label';
+    lbl.innerHTML=`<div><span class="pc-badge">${hex8(parseInt(key))}</span><span class="mnem-badge">${(info.mnem||'').substring(0,12)}</span></div>`;
+    row.appendChild(lbl);
+    const cells = document.createElement('div');
+    cells.className='pipe-cells';
+    cycles.forEach(c => {
+      const stg = info.cells[c] || '';
+      const div = document.createElement('div');
+      div.className = `pipe-cell ${stg||'NOP'}`;
+      div.textContent = stg||'';
+      div.title = `Cycle ${c}: ${stg||'—'}`;
+      cells.appendChild(div);
+    });
+    row.appendChild(cells);
+    cont.appendChild(row);
+  });
+}
+
+// ── Render cycle trace entry ──────────────────────────────────
+function renderCycleTrace(log) {
+  const container = document.getElementById('trace-container');
+  const block = document.createElement('div');
+  block.className = 'cycle-block';
+  block.id = `cycle-block-${log.cycle}`;
+
+  const flags = log.flags;
+  const IF=log.stages.IF, DE=log.stages.DE, WB=log.stages.WB;
+
+  const flagBadges = [
+    flags.stall  ? '<span class="flag-badge flag-stall">STALL</span>' : '',
+    flags.flush  ? '<span class="flag-badge flag-flush">FLUSH</span>' : '',
+    flags.mem_w  ? '<span class="flag-badge flag-mem-w">STORE</span>' : '',
+    flags.mem_r  ? '<span class="flag-badge flag-mem-r">LOAD</span>'  : '',
+    flags.wb     ? '<span class="flag-badge flag-wb">WB</span>'       : '',
+  ].filter(Boolean).join('');
+
+  const summary = DE ? DE.mnem : 'NOP';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'cycle-header';
+  hdr.innerHTML = `
+    <span class="cycle-num-badge">C${log.cycle}</span>
+    <span class="cycle-summary">${summary}</span>
+    ${flagBadges}
+    <span class="chevron">▶</span>`;
+  hdr.onclick = () => {
+    const body = block.querySelector('.cycle-body');
+    const chev = hdr.querySelector('.chevron');
+    body.classList.toggle('open');
+    chev.classList.toggle('open');
+  };
+  block.appendChild(hdr);
+
+  // Signal detail grid
+  const body = document.createElement('div');
+  body.className = 'cycle-body';
+
+  const ifMnem = IF ? IF.mnem : '—';
+  const deMnem = DE ? DE.mnem : '—';
+  const wbMnem = WB ? WB.mnem : '—';
+
+  body.innerHTML = `
+    <div class="signal-grid">
+      <!-- IF -->
+      <div class="sig-section">
+        <div class="sig-section-title"><span class="stage-tag tag-if">IF</span> Instruction Fetch</div>
+        <div class="sig-row"><span class="sig-key">PC</span><span class="sig-val hex">${hex8(IF?.pc??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">PC+4</span><span class="sig-val hex">${hex8(IF?.pc_next??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">Fetched</span><span class="sig-val hex">${IF?hex2(IF.instr):'—'}</span></div>
+        <div class="sig-row"><span class="sig-key">Mnemonic</span><span class="sig-val green">${ifMnem}</span></div>
+        <div class="sig-row"><span class="sig-key">Stall</span><span class="sig-val ${flags.stall?'warn':''}">
+          ${flags.stall?'<b>YES</b>':'no'}</span></div>
+        <div class="sig-row"><span class="sig-key">Flush</span><span class="sig-val ${flags.flush?'danger':''}">
+          ${flags.flush?'<b>YES</b>':'no'}</span></div>
+      </div>
+      <!-- DE/EX -->
+      <div class="sig-section">
+        <div class="sig-section-title"><span class="stage-tag tag-de">DE/EX</span> Decode + Execute</div>
+        <div class="sig-row"><span class="sig-key">PC</span><span class="sig-val hex">${hex8(DE?.pc??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">Instruction</span><span class="sig-val purple">${deMnem}</span></div>
+        <div class="sig-row"><span class="sig-key">rs1=x${DE?.rs1??0}</span><span class="sig-val hex">${hex8(DE?.rs1_data??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">rs2=x${DE?.rs2??0}</span><span class="sig-val hex">${hex8(DE?.rs2_data??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">Imm</span><span class="sig-val hex">${hex8(DE?.imm??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">ALU_A</span><span class="sig-val hex">${hex8(DE?.alu_a??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">ALU_B</span><span class="sig-val hex">${hex8(DE?.alu_b??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">ALU_OP</span><span class="sig-val">${DE?.alu_op??0} (${['ADD','SUB','AND','OR','XOR','SLL','SRL','SRA','SLT'][DE?.alu_op??0]??'?'})</span></div>
+        <div class="sig-row"><span class="sig-key">Result</span><span class="sig-val cyan">${hex8(DE?.alu_result??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">Zero</span><span class="sig-val">${DE?.alu_zero?'1':'0'}</span></div>
+        ${DE?.branch||DE?.jump ? `<div class="sig-row"><span class="sig-key">BranchTgt</span><span class="sig-val warn">${hex8(DE?.branch_target??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">PC_Src</span><span class="sig-val ${DE?.pc_src?'danger':''}">${DE?.pc_src?'<b>TAKEN</b>':'not taken'}</span></div>` : ''}
+        <div class="sig-row"><span class="sig-key">ctrl</span><span class="sig-val" style="font-size:9px">
+          rw=${DE?.reg_write?1:0} mr=${DE?.mem_read?1:0} mw=${DE?.mem_write?1:0} rs=${DE?.result_src?1:0}</span></div>
+      </div>
+      <!-- MEM/WB -->
+      <div class="sig-section">
+        <div class="sig-section-title"><span class="stage-tag tag-wb">WB</span> Memory + Write-Back</div>
+        <div class="sig-row"><span class="sig-key">PC</span><span class="sig-val hex">${hex8(WB?.pc??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">Instruction</span><span class="sig-val green">${wbMnem}</span></div>
+        <div class="sig-row"><span class="sig-key">ALU Result</span><span class="sig-val hex">${hex8(WB?.alu_result??0)}</span></div>
+        ${WB?.mem_read  ? `<div class="sig-row"><span class="sig-key">Load Addr</span><span class="sig-val warn">${hex8(WB?.alu_result??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">Load Data</span><span class="sig-val cyan">${hex8(WB?.read_data??0)}</span></div>` : ''}
+        ${WB?.mem_write ? `<div class="sig-row"><span class="sig-key">Store Addr</span><span class="sig-val warn">${hex8(WB?.alu_result??0)}</span></div>` : ''}
+        <div class="sig-row"><span class="sig-key">WB Data</span><span class="sig-val cyan">${hex8(WB?.write_data??0)}</span></div>
+        <div class="sig-row"><span class="sig-key">WB rd</span><span class="sig-val ${WB?.reg_write?'green':''}">${WB?.reg_write?`<b>x${WB.rd} ← ${hex8(WB?.write_data??0)}</b>`:'no write'}</span></div>
+      </div>
+    </div>`;
+
+  block.appendChild(body);
+  container.prepend(block); // newest first
+}
+
+// ── Update data memory view ───────────────────────────────────
+function updateDmemView() {
+  const tbody = document.getElementById('dmem-body');
+  tbody.innerHTML = '';
+  const addrs = new Set();
+  dmemWritten.forEach(a=>addrs.add(a&~3));
+  // Also show expected locations from test program
+  [256,260,264].forEach(a=>addrs.add(a&~3));
+  if(addrs.size===0) {
+    tbody.innerHTML='<tr><td colspan="7" style="color:var(--muted);padding:12px;text-align:center;">No memory operations yet</td></tr>';
+    return;
+  }
+  const sortedAddrs=[...addrs].sort((a,b)=>a-b);
+  sortedAddrs.forEach(waddr=>{
+    const bytes=[0,1,2,3].map(i=>dmem[waddr+i]);
+    const word=(bytes[0]|(bytes[1]<<8)|(bytes[2]<<16)|(bytes[3]<<24))>>>0;
+    const lastOp=dmemLog.filter(x=>(u32(x.addr)&~3)===waddr).slice(-1)[0];
+    const isActive=lastOp?.cycle===cycleCount;
+    const tr=document.createElement('tr');
+    tr.className=isActive?'mem-active':'mem-written';
+    tr.innerHTML=`
+      <td class="mem-addr-cell">${hex8(waddr)}</td>
+      <td>${bytes[0].toString(16).padStart(2,'0').toUpperCase()}</td>
+      <td>${bytes[1].toString(16).padStart(2,'0').toUpperCase()}</td>
+      <td>${bytes[2].toString(16).padStart(2,'0').toUpperCase()}</td>
+      <td>${bytes[3].toString(16).padStart(2,'0').toUpperCase()}</td>
+      <td class="mem-val-cell">${hex8(word)}</td>
+      <td class="mem-note-cell">${lastOp?`${lastOp.type} @ C${lastOp.cycle} (${['BYTE','HALF','WORD'][lastOp.funct3]||'?'})`:''}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Update pass/fail summary ──────────────────────────────────
+const EXPECTED = [
+  [0,  0x00000000, 'x0',  'MISC', 'hard-wired zero'],
+  [1,  0x0000007b, 'x1',  'CTRL', 'JAL landing: x1=123'],
+  [2,  0x00000204, 'x2',  'ALU',  'AUIPC: PC(0x204)+0'],
+  [3,  0x00000210, 'x3',  'CTRL', 'JALR return addr=0x210'],
+  [4,  0x00000005, 'x4',  'CTRL', 'SUB: 10-5=5'],
+  [5,  0x0000004d, 'x5',  'CTRL', 'JALR landing: x5=77'],
+  [6,  0x0000007f, 'x6',  'MEM',  'LB sign-ext 0x7F'],
+  [7,  0x00000080, 'x7',  'ALU',  'ADDI 0x80'],
+  [8,  0xffffff80, 'x8',  'MEM',  'LB sign-ext 0x80 → neg'],
+  [9,  0x00000080, 'x9',  'MEM',  'LBU zero-ext 0x80'],
+  [10, 0xffffffff, 'x10', 'ALU',  'ADDI -1'],
+  [11, 0xffffffff, 'x11', 'MEM',  'LH sign-ext 0xFFFF'],
+  [12, 0x0000ffff, 'x12', 'MEM',  'LHU zero-ext 0xFFFF'],
+  [13, 0x0000012c, 'x13', 'ALU',  'ADDI 300'],
+  [14, 0xffffffff, 'x14', 'MEM',  'LW via neg offset -44(x13)'],
+  [15, 0xffffffff, 'x15', 'MEM',  'LW load-use hazard source'],
+  [16, 0xfffffffe, 'x16', 'MEM',  'ADD x15+x15 (bubble required)'],
+  [17, 0x00000007, 'x17', 'ALU',  'ADDI 7 (BEQ-taken A)'],
+  [18, 0x00000007, 'x18', 'ALU',  'ADDI 7 (BEQ-taken B)'],
+  [19, 0x00000001, 'x19', 'CTRL', 'SLTI 5<100=1'],
+  [20, 0x0000000b, 'x20', 'CTRL', 'BEQ taken: x20=11'],
+  [21, 0x00000003, 'x21', 'ALU',  'ADDI 3 (BEQ-not-taken A)'],
+  [22, 0x00000009, 'x22', 'ALU',  'ADDI 9 (BEQ-not-taken B)'],
+  [23, 0xfffffaaa, 'x23', 'CTRL', 'Fall-thru NOT-taken BEQ'],
+  [24, 0x00000001, 'x24', 'ALU',  'ADDI 1 (BNE-taken A)'],
+  [25, 0x00000002, 'x25', 'ALU',  'ADDI 2 (BNE-taken B)'],
+  [26, 0x00000100, 'x26', 'CTRL', 'Base addr=256'],
+  [27, 0x00000016, 'x27', 'CTRL', 'BNE-taken: x27=22'],
+  [28, 0x00000004, 'x28', 'ALU',  'ADDI 4 (BNE-not-taken)'],
+  [29, 0xfffffccc, 'x29', 'CTRL', 'Fall-thru NOT-taken BNE'],
+  [30, 0x000001f0, 'x30', 'CTRL', 'JAL return addr=0x1F0'],
+  [31, 0x0000ffff, 'x31', 'MEM',  'LHU 0x0000FFFF'],
+];
+
+function updateSummary() {
+  const cards = document.getElementById('summary-cards');
+  const tbody = document.getElementById('check-body');
+
+  let pass=0,fail=0;
+  let alu_p=0,alu_f=0,mem_p=0,mem_f=0,ctrl_p=0,ctrl_f=0,misc_p=0,misc_f=0;
+  const rows=[];
+
+  EXPECTED.forEach(([idx, exp, name, cat, desc])=>{
+    const actual = u32(idx===0?0:regs[idx]);
+    const ok = actual===u32(exp);
+    if(ok){pass++;} else{fail++;}
+    if(cat==='ALU'){ok?alu_p++:alu_f++;}
+    else if(cat==='MEM'){ok?mem_p++:mem_f++;}
+    else if(cat==='CTRL'){ok?ctrl_p++:ctrl_f++;}
+    else{ok?misc_p++:misc_f++;}
+    rows.push({name,exp:u32(exp),actual,ok,cat,desc});
+  });
+
+  cards.innerHTML=`
+    <div class="stat-card"><div class="stat-val stat-total">${pass+fail}</div><div class="stat-label">Total Checks</div></div>
+    <div class="stat-card"><div class="stat-val stat-pass">${pass}</div><div class="stat-label">Passed</div></div>
+    <div class="stat-card"><div class="stat-val stat-fail">${fail}</div><div class="stat-label">Failed</div></div>
+    <div class="stat-card"><div class="stat-val stat-alu">${alu_p}/${alu_p+alu_f}</div><div class="stat-label">ALU Ops</div></div>
+    <div class="stat-card"><div class="stat-val stat-mem">${mem_p}/${mem_p+mem_f}</div><div class="stat-label">Mem Ops</div></div>`;
+
+  tbody.innerHTML=rows.map(r=>`
+    <tr class="${r.ok?'pass-row':'fail-row'}">
+      <td>${r.name}</td>
+      <td>${hex8(r.exp)}</td>
+      <td>${hex8(r.actual)}</td>
+      <td>${r.cat}</td>
+      <td>${r.desc}</td>
+    </tr>`).join('');
+}
+
+// ── Master update ─────────────────────────────────────────────
+function updateAll(log) {
+  // Header
+  document.getElementById('hdr-cycle').textContent = cycleCount;
+  document.getElementById('hdr-pc').textContent = `PC: ${hex8(PC)}`;
+  const flags = log?.flags||{};
+  const stateStr = simulationDone ? 'HALTED' :
+    flags.stall ? 'STALL' : flags.flush ? 'FLUSH' : 'RUNNING';
+  document.getElementById('hdr-state').textContent = stateStr;
+  document.getElementById('hdr-state').style.color =
+    simulationDone?'var(--danger)': flags.stall?'var(--warn)':
+    flags.flush?'var(--danger)':'var(--accent3)';
+
+  updateRegfile();
+  if(log) {
+    updateImem(log);
+    renderCycleTrace(log);
+    updatePipelineDiagram(log, cycleCount);
+  }
+  updateDmemView();
+  updateSummary();
+
+  document.getElementById('btn-back').disabled = stepHistory.length===0;
+  document.getElementById('btn-step').disabled = simulationDone;
+  document.getElementById('btn-run').disabled  = simulationDone;
+}
+
+// ── Controls ──────────────────────────────────────────────────
+let autoTimer = null;
+
+function doStep() {
+  if(simulationDone) return;
+  const log = simulationStep();
+  updateAll(log);
+}
+
+function doRun() {
+  if(autoTimer) { clearInterval(autoTimer); autoTimer=null; document.getElementById('btn-run').textContent='▶ Run All'; return; }
+  document.getElementById('btn-run').textContent='⏸ Pause';
+  const speed = parseInt(document.getElementById('speed-slider').value)||200;
+  autoTimer = setInterval(()=>{
+    if(simulationDone){ clearInterval(autoTimer); autoTimer=null; document.getElementById('btn-run').textContent='▶ Run All'; return; }
+    doStep();
+  }, speed);
+}
+
+function doBack() {
+  if(stepHistory.length===0) return;
+  const snap = stepHistory.pop();
+  restoreState(snap);
+  simulationDone = false;
+  pipeMap = {};
+
+  // Rebuild pipeMap from cycleLog
+  cycleLog.forEach((log,i)=>{
+    const c=log.cycle;
+    const {IF,DE,WB}=log.stages;
+    const {stall,flush}=log.flags;
+    if(IF&&IF.instr!==undefined){
+      const key=IF.pc;
+      if(!pipeMap[key]) pipeMap[key]={mnem:IF.mnem,cells:{}};
+      pipeMap[key].cells[c]=stall?'STALL':'IF';
+    }
+    if(DE&&DE.instr&&DE.instr!==0x00000013){
+      const key=DE.pc;
+      if(!pipeMap[key]) pipeMap[key]={mnem:DE.mnem,cells:{}};
+      pipeMap[key].cells[c]=flush?'FLUSH':'DE';
+    }
+    if(WB&&WB.instr&&WB.instr!==0x00000013&&WB.pc!==undefined){
+      const key=WB.pc;
+      if(!pipeMap[key]) pipeMap[key]={mnem:WB.mnem,cells:{}};
+      pipeMap[key].cells[c]='WB';
+    }
+  });
+
+  // Redraw trace container
+  const tc=document.getElementById('trace-container');
+  tc.innerHTML='';
+  cycleLog.forEach(log=>renderCycleTrace(log));
+
+  const lastLog=cycleLog[cycleLog.length-1];
+  if(lastLog) updatePipelineDiagram(lastLog, cycleCount);
+
+  regFlash=new Array(32).fill(false);
+  updateAll(lastLog);
+}
+
+function doReset() {
+  if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
+  PC=0; cycleCount=0; simulationDone=false;
+  ifde={instr:0x00000013,pc:0,pc_next:4,valid:false};
+  demem={alu_result:0,rs2_data:0,rd:0,pc_next:0,imm_ext:0,funct3:0,
+    reg_write:false,mem_read:false,mem_write:false,result_src:false,
+    jump:false,opcode:0,instr:0x00000013,pc:0,valid:false};
+  regs=new Int32Array(32); dmem=new Uint8Array(4096);
+  dmemWritten=new Set(); stalled_for_pc=-1;
+  cycleLog=[]; dmemLog=[]; stepHistory=[]; pipeMap={};
+  regFlash=new Array(32).fill(false); regPrevWrite=-1;
+  document.getElementById('trace-container').innerHTML='';
+  document.getElementById('pipe-rows').innerHTML='';
+  document.getElementById('pipe-header').innerHTML='';
+  document.getElementById('btn-run').textContent='▶ Run All';
+  updateAll(null);
+  buildImem();
+}
+
+// ── Tab switching ─────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab==='summary') updateSummary();
+    if(btn.dataset.tab==='dmem') updateDmemView();
+  };
+});
+
+// ── Speed slider ──────────────────────────────────────────────
+document.getElementById('speed-slider').oninput = function(){
+  document.getElementById('speed-val').textContent=this.value+'ms';
+  if(autoTimer){
+    clearInterval(autoTimer);
+    const speed=parseInt(this.value);
+    autoTimer=setInterval(()=>{
+      if(simulationDone){clearInterval(autoTimer);autoTimer=null;
+        document.getElementById('btn-run').textContent='▶ Run All'; return;}
+      doStep();
+    }, speed);
+  }
+};
+
+// ── Wire buttons ──────────────────────────────────────────────
+document.getElementById('btn-run').onclick  = doRun;
+document.getElementById('btn-step').onclick = doStep;
+document.getElementById('btn-back').onclick = doBack;
+document.getElementById('btn-reset').onclick= doReset;
+
+// ── Init ──────────────────────────────────────────────────────
+buildImem();
+buildRegfile();
+updateAll(null);
+</script>
+</body>
+</html>
